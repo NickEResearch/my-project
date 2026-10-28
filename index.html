@@ -1,59 +1,217 @@
-<div>Teachable Machine Image Model</div>
-<button type="button" onclick="init()">Start</button>
-<div id="webcam-container"></div>
-<div id="label-container"></div>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
-<script type="text/javascript">
-    // More API functions here:
-    // https://github.com/googlecreativelab/teachablemachine-community/tree/master/libraries/image
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Who Wrote This?</title>
+  <style>
+    body { font-family: Georgia, serif; text-align: center; background: #f3ede2; color: #333; }
+    button { font-size: 1rem; margin: 4px; padding: 6px 12px; }
+    #status { font-size: 1.2rem; margin: 12px; min-height: 1.5em; }
+    #label-container { font-size: 0.85rem; color: #777; }
+    #stage { max-width: 480px; margin: 10px auto; }
+    #stage svg { width: 100%; height: auto; display: block; }
+    #idle-msg { padding: 80px 0; color: #999; font-style: italic; }
 
-    // the link to your model provided by Teachable Machine export panel
-    const URL = "https://teachablemachine.withgoogle.com/models/mNoQFVdFB/";
+    /* Only show the scene that matches the current state */
+    .scene { display: none; }
+    body[data-state="idle"]   #scene-idle   { display: block; }
+    body[data-state="jencks"] #scene-jencks { display: block; }
+    body[data-state="other"]  #scene-other  { display: block; }
+
+    /* ---------- SCENE 1: HAND WRITING ---------- */
+    .ink {
+      fill: none; stroke: #1a237e; stroke-width: 3;
+      stroke-linecap: round; stroke-linejoin: round;
+      stroke-dasharray: 1 2; stroke-dashoffset: 1;
+    }
+    #ink1 { animation: ink1 8s linear infinite; }
+    #ink2 { animation: ink2 8s linear infinite; }
+    #ink3 { animation: ink3 8s linear infinite; }
+    @keyframes ink1 { 0% {stroke-dashoffset:1} 28% {stroke-dashoffset:0} 100% {stroke-dashoffset:0} }
+    @keyframes ink2 { 0%,32% {stroke-dashoffset:1} 60% {stroke-dashoffset:0} 100% {stroke-dashoffset:0} }
+    @keyframes ink3 { 0%,64% {stroke-dashoffset:1} 92% {stroke-dashoffset:0} 100% {stroke-dashoffset:0} }
+
+    #pen { animation: penmove 8s linear infinite; }
+    @keyframes penmove {
+      0%   { transform: translate(90px, 90px); }
+      28%  { transform: translate(310px, 90px); }
+      32%  { transform: translate(90px, 140px); }
+      60%  { transform: translate(310px, 140px); }
+      64%  { transform: translate(90px, 190px); }
+      92%  { transform: translate(310px, 190px); }
+      100% { transform: translate(90px, 90px); }
+    }
+    #penwobble { animation: wobble 0.4s ease-in-out infinite alternate; }
+    @keyframes wobble { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+
+    /* ---------- SCENE 2: LETTER OPENER ---------- */
+    #opener { transform: translate(-150px, 112px); animation: openermove 8s linear infinite; }
+    @keyframes openermove {
+      0%   { transform: translate(-150px, 112px); }
+      12%  { transform: translate(80px, 112px); }
+      40%  { transform: translate(320px, 112px); }
+      50%  { transform: translate(620px, 60px); }
+      100% { transform: translate(620px, 60px); }
+    }
+
+    #tear {
+      fill: none; stroke: #8b7a4a; stroke-width: 3; stroke-linecap: round;
+      stroke-dasharray: 1 2; stroke-dashoffset: 1;
+      animation: tear 8s linear infinite;
+    }
+    @keyframes tear { 0%,12% {stroke-dashoffset:1} 40% {stroke-dashoffset:0} 100% {stroke-dashoffset:0} }
+
+    #closedFlap, #openFlap { transform-origin: 200px 110px; }
+    #closedFlap { animation: closeflap 8s linear infinite; }
+    #openFlap   { transform: scaleY(0); animation: openflap 8s linear infinite; }
+    @keyframes closeflap { 0%,50% {transform:scaleY(1)} 56% {transform:scaleY(0)} 100% {transform:scaleY(0)} }
+    @keyframes openflap  { 0%,56% {transform:scaleY(0)} 62% {transform:scaleY(1)} 100% {transform:scaleY(1)} }
+
+    #letter { animation: letterslide 8s ease-out infinite; }
+    @keyframes letterslide { 0%,62% {transform:translateY(0)} 88% {transform:translateY(-95px)} 100% {transform:translateY(-95px)} }
+  </style>
+</head>
+<body data-state="idle">
+  <h1>Who Wrote This?</h1>
+  <button type="button" onclick="init()">Start</button>
+  <div id="status">Press Start and allow camera access.</div>
+
+  <div id="stage">
+    <!-- IDLE -->
+    <div id="scene-idle" class="scene"><div id="idle-msg">Hold an image up to the camera...</div></div>
+
+    <!-- SCENE 1: JENCKS = HAND WRITING -->
+    <div id="scene-jencks" class="scene">
+      <svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+        <rect x="60" y="30" width="280" height="240" fill="#fffef8" stroke="#bbb" stroke-width="2"/>
+        <path id="ink1" class="ink" pathLength="1" d="M90 90 q10 -22 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0"/>
+        <path id="ink2" class="ink" pathLength="1" d="M90 140 q10 -22 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0"/>
+        <path id="ink3" class="ink" pathLength="1" d="M90 190 q10 -22 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0"/>
+        <!-- the pen tip is at (0,0) of this group -->
+        <g id="pen"><g id="penwobble">
+          <rect x="110" y="-165" width="150" height="45" fill="#455a64" transform="rotate(-50 110 -120)"/>
+          <line x1="0" y1="0" x2="75" y2="-95" stroke="#222" stroke-width="6" stroke-linecap="round"/>
+          <ellipse cx="85" cy="-105" rx="46" ry="26" fill="#f2c7a0" stroke="#c4916a" transform="rotate(-50 85 -105)"/>
+          <ellipse cx="52" cy="-70" rx="14" ry="8" fill="#f2c7a0" stroke="#c4916a" transform="rotate(-50 52 -70)"/>
+          <ellipse cx="64" cy="-62" rx="14" ry="8" fill="#f2c7a0" stroke="#c4916a" transform="rotate(-50 64 -62)"/>
+        </g></g>
+      </svg>
+    </div>
+
+    <!-- SCENE 2: OTHER AUTHOR = LETTER OPENER -->
+    <div id="scene-other" class="scene">
+      <svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+        <rect x="80" y="110" width="240" height="150" fill="#eadfc0" stroke="#b9a77c" stroke-width="2"/>
+        <polygon id="openFlap" points="80,110 320,110 200,25" fill="#d8c89c" stroke="#b9a77c" stroke-width="2"/>
+        <g id="letter">
+          <rect x="105" y="125" width="190" height="130" fill="#fffdf5" stroke="#ccc"/>
+          <line x1="125" y1="150" x2="275" y2="150" stroke="#999"/>
+          <line x1="125" y1="170" x2="275" y2="170" stroke="#999"/>
+          <line x1="125" y1="190" x2="275" y2="190" stroke="#999"/>
+          <line x1="125" y1="210" x2="245" y2="210" stroke="#999"/>
+        </g>
+        <polygon points="80,260 80,110 200,195 320,110 320,260" fill="#f4e9d0" stroke="#b9a77c" stroke-width="2"/>
+        <polygon id="closedFlap" points="80,110 320,110 200,195" fill="#e9dcb8" stroke="#b9a77c" stroke-width="2"/>
+        <path id="tear" pathLength="1" d="M80 112 H320"/>
+        <!-- the letter opener's tip is at (0,0) of this group -->
+        <g id="opener">
+          <rect x="-300" y="-36" width="135" height="52" fill="#455a64"/>
+          <rect x="-165" y="-8" width="75" height="16" rx="4" fill="#8d6e63"/>
+          <polygon points="0,0 -92,-8 -92,8" fill="#cfd8dc" stroke="#78909c"/>
+          <ellipse cx="-170" cy="-10" rx="40" ry="26" fill="#f2c7a0" stroke="#c4916a"/>
+          <ellipse cx="-135" cy="-6" rx="8" ry="14" fill="#f2c7a0" stroke="#c4916a"/>
+          <ellipse cx="-120" cy="-6" rx="8" ry="14" fill="#f2c7a0" stroke="#c4916a"/>
+          <ellipse cx="-105" cy="-6" rx="8" ry="14" fill="#f2c7a0" stroke="#c4916a"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <div>
+    <button type="button" onclick="showState('jencks')">Test: Jencks</button>
+    <button type="button" onclick="showState('other')">Test: Other author</button>
+    <button type="button" onclick="showState('idle')">Test: Nothing</button>
+  </div>
+
+  <div id="webcam-container"></div>
+  <div id="label-container"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+  <script type="text/javascript">
+    // ===== EDIT THESE THREE THINGS =====
+    const MODEL_URL = "https://teachablemachine.withgoogle.com/models/mNoQFVdFB/";
+    const JENCKS_CLASS = "Jencks's Handwriting";   // must match your class name EXACTLY
+    const OTHER_CLASS = "Other Handwriting";     // must match your class name EXACTLY
+    const THRESHOLD = 0.8;           // how sure the model must be (0 to 1)
+    // ====================================
 
     let model, webcam, labelContainer, maxPredictions;
+    let currentState = "idle";
 
-    // Load the image model and setup the webcam
     async function init() {
-        const modelURL = URL + "model.json";
-        const metadataURL = URL + "metadata.json";
-
-        // load the model and metadata
-        // Refer to tmImage.loadFromFiles() in the API to support files from a file picker
-        // or files from your local hard drive
-        // Note: the pose library adds "tmImage" object to your window (window.tmImage)
-        model = await tmImage.load(modelURL, metadataURL);
+      const status = document.getElementById("status");
+      try {
+        status.innerText = "Loading model...";
+        model = await tmImage.load(MODEL_URL + "model.json", MODEL_URL + "metadata.json");
         maxPredictions = model.getTotalClasses();
+        status.innerText = "Model loaded! Requesting camera...";
 
-        // Convenience function to setup a webcam
-        const flip = true; // whether to flip the webcam
-        webcam = new tmImage.Webcam(200, 200, flip); // width, height, flip
-        await webcam.setup(); // request access to the webcam
+        webcam = new tmImage.Webcam(200, 200, true);
+        await webcam.setup();
         await webcam.play();
         window.requestAnimationFrame(loop);
 
-        // append elements to the DOM
         document.getElementById("webcam-container").appendChild(webcam.canvas);
         labelContainer = document.getElementById("label-container");
-        for (let i = 0; i < maxPredictions; i++) { // and class labels
-            labelContainer.appendChild(document.createElement("div"));
+        for (let i = 0; i < maxPredictions; i++) {
+          labelContainer.appendChild(document.createElement("div"));
         }
+        showState("idle");
+      } catch (error) {
+        status.innerText = "Error: " + error.message;
+        console.error(error);
+      }
     }
 
     async function loop() {
-        webcam.update(); // update the webcam frame
-        await predict();
-        window.requestAnimationFrame(loop);
+      webcam.update();
+      await predict();
+      window.requestAnimationFrame(loop);
     }
 
-    // run the webcam image through the image model
     async function predict() {
-        // predict can take in an image, video or canvas html element
-        const prediction = await model.predict(webcam.canvas);
-        for (let i = 0; i < maxPredictions; i++) {
-            const classPrediction =
-                prediction[i].className + ": " + prediction[i].probability.toFixed(2);
-            labelContainer.childNodes[i].innerHTML = classPrediction;
-        }
+      const prediction = await model.predict(webcam.canvas);
+      let jencksScore = 0, otherScore = 0;
+      for (let i = 0; i < maxPredictions; i++) {
+        labelContainer.childNodes[i].innerHTML =
+          prediction[i].className + ": " + prediction[i].probability.toFixed(2);
+        if (prediction[i].className === JENCKS_CLASS) jencksScore = prediction[i].probability;
+        if (prediction[i].className === OTHER_CLASS) otherScore = prediction[i].probability;
+      }
+
+      if (jencksScore > THRESHOLD && jencksScore >= otherScore) {
+        showState("jencks");
+      } else if (otherScore > THRESHOLD) {
+        showState("other");
+      } else {
+        showState("idle");
+      }
     }
-</script>
+
+    // Switches which animation is showing
+    function showState(state) {
+      if (state === currentState && document.body.dataset.state === state) return;
+      currentState = state;
+      document.body.dataset.state = state;
+      const messages = {
+        jencks: "Jencks detected: the author is writing...",
+        other: "A different author: opening their letter...",
+        idle: "Hold an image up to the camera..."
+      };
+      document.getElementById("status").innerText = messages[state];
+    }
+  </script>
+</body>
+</html>
